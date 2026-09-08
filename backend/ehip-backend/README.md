@@ -149,48 +149,45 @@ The project uses multiple Azure services to build an end-to-end cloud data platf
 The operational healthcare database currently consists of three core entities.
 
 ```mermaid
-erDiagram
+flowchart TB
 
-    DOCTOR ||--o{ PATIENT : manages
-    PATIENT ||--o{ MEDICAL_HISTORY : has
+    Doctor["👨‍⚕️ DOCTOR<br/><br/>
+    🔑 DoctorId (PK)<br/>
+    FirstName<br/>
+    LastName<br/>
+    Specialization<br/>
+    Email<br/>
+    Phone<br/>
+    CreatedAt<br/>
+    UpdatedAt"]
 
-    DOCTOR {
-        int DoctorId PK
-        string FirstName
-        string LastName
-        string Specialization
-        string Email
-        string Phone
-        datetime CreatedAt
-        datetime UpdatedAt
-    }
+    Patient["🧑 PATIENT<br/><br/>
+    🔑 PatientId (PK)<br/>
+    FirstName<br/>
+    LastName<br/>
+    DateOfBirth<br/>
+    Gender<br/>
+    🔗 DoctorId (FK)<br/>
+    CreatedAt<br/>
+    UpdatedAt"]
 
-    PATIENT {
-        int PatientId PK
-        string FirstName
-        string LastName
-        date DateOfBirth
-        string Gender
-        int DoctorId FK
-        datetime CreatedAt
-        datetime UpdatedAt
-    }
+    History["❤️ MEDICAL HISTORY<br/><br/>
+    🔑 HistoryId (PK)<br/>
+    🔗 PatientId (FK)<br/>
+    SugarLevel<br/>
+    HasDiabetes<br/>
+    RecordedAt<br/>
+    BloodPressureSys<br/>
+    BloodPressureDia<br/>
+    HeartRate<br/>
+    Cholesterol<br/>
+    BMI<br/>
+    Smoking<br/>
+    AlcoholConsumption<br/>
+    UpdatedAt"]
 
-    MEDICAL_HISTORY {
-        int HistoryId PK
-        int PatientId FK
-        float SugarLevel
-        boolean HasDiabetes
-        datetime RecordedAt
-        int BloodPressureSys
-        int BloodPressureDia
-        int HeartRate
-        float Cholesterol
-        float BMI
-        boolean Smoking
-        boolean AlcoholConsumption
-        datetime UpdatedAt
-    }
+    Doctor -->|"1 Doctor manages many Patients"| Patient
+    Patient -->|"1 Patient has many Medical Records"| History
 ```
 
 ### Entity Relationships
