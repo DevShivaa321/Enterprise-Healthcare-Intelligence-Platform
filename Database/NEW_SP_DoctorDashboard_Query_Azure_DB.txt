@@ -1,0 +1,313 @@
+ALTER PROCEDURE GetDoctorDashboard
+    @PageNumber INT = 0,
+    @PageSize INT = 10,
+    @SearchTerm NVARCHAR(100) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    ;WITH LatestMedicalHistory AS
+    (
+        SELECT
+            mh.PatientId,
+            mh.SugarLevel,
+            mh.HasDiabetes,
+            mh.BloodPressureSys,
+            mh.BloodPressureDia,
+            mh.HeartRate,
+            mh.Cholesterol,
+            mh.BMI,
+            mh.Smoking,
+            mh.AlcoholConsumption,
+
+            ROW_NUMBER() OVER
+            (
+                PARTITION BY mh.PatientId
+                ORDER BY mh.RecordedAt DESC
+            ) AS rn
+
+        FROM MedicalHistory mh
+    ),
+
+    PatientRawRisk AS
+    (
+        SELECT
+            p.PatientId,
+            p.DoctorId,
+
+            CASE
+                WHEN mh.PatientId IS NULL THEN NULL
+
+                ELSE
+                (
+                    CASE
+                        WHEN DATEDIFF(YEAR, p.DateOfBirth, GETDATE()) > 60
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.SugarLevel > 140
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.HasDiabetes = 1
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.BloodPressureSys > 140
+                          OR mh.BloodPressureDia > 90
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.HeartRate > 100
+                        THEN 1 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.Cholesterol > 240
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.BMI > 30
+                        THEN 1 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.Smoking = 1
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.AlcoholConsumption = 1
+                        THEN 1 ELSE 0
+                    END
+                )
+            END AS RawRisk
+
+        FROM Patient p
+
+        LEFT JOIN LatestMedicalHistory mh
+            ON p.PatientId = mh.PatientId
+            AND mh.rn = 1
+
+        WHERE p.IsDeleted = 0
+    ),
+
+    PatientRisk AS
+    (
+        SELECT
+            PatientId,
+            DoctorId,
+
+            CASE
+                WHEN RawRisk IS NULL THEN NULL
+                WHEN RawRisk > 10 THEN 10
+                ELSE RawRisk
+            END AS RiskRating
+
+        FROM PatientRawRisk
+    ),
+
+    DoctorDashboard AS
+    (
+        SELECT
+            d.DoctorId,
+
+            CONCAT(d.FirstName, ' ', d.LastName) AS DoctorName,
+
+            d.Specialization,
+
+            COUNT(pr.PatientId) AS PatientCount,
+
+            SUM(
+                CASE
+                    WHEN pr.RiskRating >= 7 THEN 1
+                    ELSE 0
+                END
+            ) AS HighRiskPatientCount
+
+        FROM Doctor d
+
+        LEFT JOIN PatientRisk pr
+            ON d.DoctorId = pr.DoctorId
+
+        WHERE
+            d.IsDeleted = 0
+
+            AND
+            (
+                @SearchTerm IS NULL
+                OR @SearchTerm = ''
+
+                OR CONCAT(d.FirstName, ' ', d.LastName)
+                    LIKE '%' + @SearchTerm + '%'
+
+                OR d.Specialization
+                    LIKE '%' + @SearchTerm + '%'
+            )
+
+        GROUP BY
+            d.DoctorId,
+            d.FirstName,
+            d.LastName,
+            d.Specialization
+    )
+
+    SELECT
+        *,
+        COUNT(*) OVER() AS TotalRecords
+
+    FROM DoctorDashboard
+
+    ORDER BY DoctorId
+
+    OFFSET (@PageNumber * @PageSize) ROWS
+    FETCH NEXT @PageSize ROWS ONLY;
+
+END;
+GO
+
+EXEC GetDoctorDashboard @PageNumber =0, @PageSize=10, @SearchTerm='cardio';
+
+EXEC GetDoctorDashboard
+    @PageNumber = 0,
+    @PageSize = 10,
+    @SearchTerm = '';
+
+ALTER PROCEDURE GetPatientsByDoctor
+    @DoctorId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    ;WITH LatestMedicalHistory AS
+    (
+        SELECT
+            mh.PatientId,
+            mh.SugarLevel,
+            mh.HasDiabetes,
+            mh.BloodPressureSys,
+            mh.BloodPressureDia,
+            mh.HeartRate,
+            mh.Cholesterol,
+            mh.BMI,
+            mh.Smoking,
+            mh.AlcoholConsumption,
+
+            ROW_NUMBER() OVER
+            (
+                PARTITION BY mh.PatientId
+                ORDER BY mh.RecordedAt DESC
+            ) AS rn
+
+        FROM MedicalHistory mh
+    ),
+
+    PatientRawRisk AS
+    (
+        SELECT
+            p.PatientId,
+
+            CONCAT(
+                p.FirstName,
+                ' ',
+                p.LastName
+            ) AS PatientName,
+
+            CASE
+                WHEN mh.PatientId IS NULL THEN NULL
+
+                ELSE
+                (
+                    CASE
+                        WHEN DATEDIFF(YEAR, p.DateOfBirth, GETDATE()) > 60
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.SugarLevel > 140
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.HasDiabetes = 1
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.BloodPressureSys > 140
+                          OR mh.BloodPressureDia > 90
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.HeartRate > 100
+                        THEN 1 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.Cholesterol > 240
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.BMI > 30
+                        THEN 1 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.Smoking = 1
+                        THEN 2 ELSE 0
+                    END +
+
+                    CASE
+                        WHEN mh.AlcoholConsumption = 1
+                        THEN 1 ELSE 0
+                    END
+                )
+            END AS RawRisk
+
+        FROM Patient p
+
+        LEFT JOIN LatestMedicalHistory mh
+            ON p.PatientId = mh.PatientId
+            AND mh.rn = 1
+
+        WHERE
+            p.DoctorId = @DoctorId
+            AND p.IsDeleted = 0
+    )
+
+    SELECT
+        PatientId,
+        PatientName,
+
+        CASE
+            WHEN RawRisk IS NULL THEN NULL
+            WHEN RawRisk > 10 THEN 10
+            ELSE RawRisk
+        END AS RiskRating
+
+    FROM PatientRawRisk
+
+    ORDER BY PatientId;
+
+END;
+GO
+
+EXEC GetPatientsByDoctor @DoctorId = 155;
+
+CREATE INDEX IX_Patient_DoctorId_IsDeleted
+ON Patient (DoctorId, IsDeleted)
+INCLUDE
+(
+    PatientId,
+    FirstName,
+    LastName,
+    DateOfBirth
+);
+

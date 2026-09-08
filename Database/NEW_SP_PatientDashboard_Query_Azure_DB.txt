@@ -1,0 +1,188 @@
+ALTER PROCEDURE GetPatientDashboard
+    @PageNumber INT = 0,
+    @PageSize INT = 15
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    ;WITH PagedPatients AS
+    (
+        SELECT
+            p.PatientId,
+            p.FirstName,
+            p.LastName,
+            p.DateOfBirth,
+            p.Gender,
+            p.DoctorId,
+            COUNT(*) OVER() AS TotalRecords
+
+        FROM Patient p
+
+        WHERE p.IsDeleted = 0
+
+        ORDER BY p.PatientId
+
+        OFFSET (@PageNumber * @PageSize) ROWS
+        FETCH NEXT @PageSize ROWS ONLY
+    )
+
+    SELECT
+        p.PatientId,
+        p.FirstName,
+        p.LastName,
+        p.DateOfBirth,
+        p.Gender,
+        p.DoctorId,
+
+        -- Doctor Details
+        CONCAT(d.FirstName, ' ', d.LastName) AS DoctorName,
+        d.Specialization AS DoctorSpecialization,
+
+        -- Risk Calculation
+        CASE
+            WHEN mh.PatientId IS NULL THEN NULL
+            WHEN mh.RawScore > 10 THEN 10
+            ELSE mh.RawScore
+        END AS RiskRating,
+
+        -- Pagination
+        p.TotalRecords
+
+    FROM PagedPatients p
+
+    LEFT JOIN Doctor d
+        ON p.DoctorId = d.DoctorId
+        AND d.IsDeleted = 0
+
+    OUTER APPLY
+    (
+        SELECT TOP 1
+            mh.PatientId,
+
+            (
+                CASE 
+                    WHEN DATEDIFF(YEAR, p.DateOfBirth, GETDATE()) > 60 
+                    THEN 2 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.SugarLevel > 140 
+                    THEN 2 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.HasDiabetes = 1 
+                    THEN 2 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.BloodPressureSys > 140 
+                      OR mh.BloodPressureDia > 90 
+                    THEN 2 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.HeartRate > 100 
+                    THEN 1 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.Cholesterol > 240 
+                    THEN 2 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.BMI > 30 
+                    THEN 1 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.Smoking = 1 
+                    THEN 2 ELSE 0 
+                END +
+
+                CASE 
+                    WHEN mh.AlcoholConsumption = 1 
+                    THEN 1 ELSE 0 
+                END
+
+            ) AS RawScore
+
+        FROM MedicalHistory mh
+
+        WHERE mh.PatientId = p.PatientId
+
+        ORDER BY mh.RecordedAt DESC
+
+    ) mh
+
+    ORDER BY p.PatientId;
+
+END;
+GO
+
+EXEC GetPatientDashboard
+    @PageNumber = 0,
+    @PageSize = 15;
+
+EXEC GetPatientDashboard
+    @PageNumber = 1,
+    @PageSize = 15;
+
+EXEC GetPatientDashboard
+    @PageNumber = 3,
+    @PageSize = 15;
+
+DROP INDEX IX_MedicalHistory_PatientId_RecordedAt ON MedicalHistory;
+
+CREATE INDEX IX_MedicalHistory_PatientId_RecordedAt
+ON MedicalHistory (PatientId, RecordedAt DESC)
+INCLUDE
+(
+    SugarLevel,
+    HasDiabetes,
+    BloodPressureSys,
+    BloodPressureDia,
+    HeartRate,
+    Cholesterol,
+    BMI,
+    Smoking,
+    AlcoholConsumption
+);
+
+
+CREATE INDEX IX_Patient_DoctorId
+ON Patient (DoctorId);
+
+DROP INDEX IX_Patient_IsDeleted_PatientId ON Patient;
+CREATE INDEX IX_Patient_IsDeleted_PatientId
+ON Patient (IsDeleted, PatientId)
+INCLUDE
+(
+    FirstName,
+    LastName,
+    DateOfBirth,
+    Gender,
+    DoctorId
+);
+
+
+SELECT TOP 20
+    p.PatientId,
+    p.DoctorId AS PatientDoctorId,
+    d.DoctorId AS ActualDoctorId,
+    d.FirstName,
+    d.LastName
+FROM Patient p
+LEFT JOIN Doctor d
+    ON p.DoctorId = d.DoctorId;
+
+SELECT TOP 20
+    p.PatientId,
+    p.DoctorId
+FROM Patient p
+LEFT JOIN Doctor d
+    ON p.DoctorId = d.DoctorId
+WHERE d.DoctorId IS NULL;
+
+

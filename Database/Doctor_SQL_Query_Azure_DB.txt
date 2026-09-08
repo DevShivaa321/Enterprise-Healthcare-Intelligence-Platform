@@ -1,0 +1,406 @@
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_Patient_Doctor'
+)
+BEGIN
+    ALTER TABLE Patient
+    ADD CONSTRAINT FK_Patient_Doctor
+    FOREIGN KEY (DoctorId)
+    REFERENCES Doctor(DoctorId);
+END;
+
+ALTER TABLE Doctor
+ADD CONSTRAINT DF_Doctor_IsDeleted
+DEFAULT 0 FOR IsDeleted;
+
+UPDATE Doctor
+SET IsDeleted = 0
+WHERE IsDeleted IS NULL;
+
+-- Only run if defaults don't already exist
+ALTER TABLE Doctor
+ADD CONSTRAINT DF_Doctor_CreatedAt
+DEFAULT GETDATE() FOR CreatedAt;
+
+ALTER TABLE Doctor
+ADD CONSTRAINT DF_Doctor_UpdatedAt
+DEFAULT GETDATE() FOR UpdatedAt;
+
+UPDATE Doctor
+SET UpdatedAt = GETDATE()
+WHERE UpdatedAt IS NULL;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_DOCTOR_EMAIL'
+)
+BEGIN
+    ALTER TABLE Doctor
+    ADD CONSTRAINT CHK_DOCTOR_EMAIL
+    CHECK (
+        Email LIKE '%_@_%._%'
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'UQ_Doctor_Email_Active'
+)
+BEGIN
+    CREATE UNIQUE INDEX UQ_Doctor_Email_Active
+    ON Doctor(Email)
+    WHERE IsDeleted = 0;
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_DOCTOR_PHONE'
+)
+BEGIN
+    ALTER TABLE Doctor
+    ADD CONSTRAINT CHK_DOCTOR_PHONE
+    CHECK (
+        LEN(Phone) = 10
+        AND Phone NOT LIKE '%[^0-9]%'
+        AND Phone <> '0000000000'
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'UQ_Doctor_Phone_Active'
+)
+BEGIN
+    CREATE UNIQUE INDEX UQ_Doctor_Phone_Active
+    ON Doctor(Phone)
+    WHERE IsDeleted = 0;
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_DOCTOR_FIRSTNAME'
+)
+BEGIN
+    ALTER TABLE Doctor
+    ADD CONSTRAINT CHK_DOCTOR_FIRSTNAME
+    CHECK (
+        LEN(LTRIM(RTRIM(FirstName))) > 0
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_DOCTOR_SPECIALIZATION'
+)
+BEGIN
+    ALTER TABLE Doctor
+    ADD CONSTRAINT CHK_DOCTOR_SPECIALIZATION
+    CHECK (
+        LEN(LTRIM(RTRIM(Specialization))) > 0
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_DOCTOR_NAME_CHARS'
+)
+BEGIN
+    ALTER TABLE Doctor
+    ADD CONSTRAINT CHK_DOCTOR_NAME_CHARS
+    CHECK (
+        FirstName NOT LIKE '%[0-9]%'
+        AND
+        (LastName IS NULL OR LastName NOT LIKE '%[0-9]%')
+    );
+END;
+
+---SPs ----
+CREATE OR ALTER PROCEDURE GetAllDoctors
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SELECT
+        d.DoctorId,
+
+        CONCAT(
+            d.FirstName,
+            ' ',
+            ISNULL(d.LastName, '')
+        ) AS DoctorName,
+
+        d.Specialization,
+
+        COUNT(p.PatientId) AS PatientCount
+
+    FROM Doctor d
+
+    LEFT JOIN Patient p
+        ON d.DoctorId = p.DoctorId
+        AND p.IsDeleted = 0
+
+    WHERE d.IsDeleted = 0
+
+    GROUP BY
+        d.DoctorId,
+        d.FirstName,
+        d.LastName,
+        d.Specialization
+
+    ORDER BY DoctorName;
+
+END;
+
+CREATE OR ALTER PROCEDURE GetPatientsByDoctor
+    @DoctorId INT
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SELECT
+        PatientId,
+
+        CONCAT(
+            FirstName,
+            ' ',
+            ISNULL(LastName, '')
+        ) AS PatientName
+
+    FROM Patient
+
+    WHERE DoctorId = @DoctorId
+      AND IsDeleted = 0
+
+    ORDER BY PatientName;
+
+END;
+
+CREATE OR ALTER PROCEDURE AddDoctor
+(
+    @FirstName VARCHAR(50),
+    @LastName VARCHAR(50),
+    @Specialization VARCHAR(100),
+    @Phone VARCHAR(20),
+    @Email VARCHAR(100)
+)
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    -- Check duplicate active email
+    IF EXISTS (
+        SELECT 1
+        FROM Doctor
+        WHERE LOWER(Email) = LOWER(@Email)
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Email already exists', 16, 1);
+        RETURN;
+    END;
+
+
+    -- Check duplicate active phone
+    IF EXISTS (
+        SELECT 1
+        FROM Doctor
+        WHERE Phone = @Phone
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Phone number already exists', 16, 1);
+        RETURN;
+    END;
+
+
+    INSERT INTO Doctor
+    (
+        FirstName,
+        LastName,
+        Specialization,
+        Phone,
+        Email,
+        CreatedAt,
+        UpdatedAt,
+        IsDeleted
+    )
+    VALUES
+    (
+        @FirstName,
+        @LastName,
+        @Specialization,
+        @Phone,
+        @Email,
+        GETDATE(),
+        GETDATE(),
+        0
+    );
+
+END;
+
+
+CREATE OR ALTER PROCEDURE GetDoctorById
+    @DoctorId INT
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SELECT
+        DoctorId,
+        FirstName,
+        LastName,
+        Specialization,
+        Phone,
+        Email
+
+    FROM Doctor
+
+    WHERE DoctorId = @DoctorId
+      AND IsDeleted = 0;
+
+END;
+
+CREATE OR ALTER PROCEDURE UpdateDoctor
+(
+    @DoctorId INT,
+    @FirstName VARCHAR(50),
+    @LastName VARCHAR(50),
+    @Specialization VARCHAR(100),
+    @Phone VARCHAR(20),
+    @Email VARCHAR(100)
+)
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM Doctor
+        WHERE DoctorId = @DoctorId
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Doctor not found', 16, 1);
+        RETURN;
+    END;
+
+
+    -- Check duplicate email excluding current doctor
+    IF EXISTS (
+        SELECT 1
+        FROM Doctor
+        WHERE LOWER(Email) = LOWER(@Email)
+          AND DoctorId <> @DoctorId
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Email already exists', 16, 1);
+        RETURN;
+    END;
+
+
+    -- Check duplicate phone excluding current doctor
+    IF EXISTS (
+        SELECT 1
+        FROM Doctor
+        WHERE Phone = @Phone
+          AND DoctorId <> @DoctorId
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Phone number already exists', 16, 1);
+        RETURN;
+    END;
+
+
+    UPDATE Doctor
+
+    SET
+        FirstName = @FirstName,
+        LastName = @LastName,
+        Specialization = @Specialization,
+        Phone = @Phone,
+        Email = @Email,
+
+        -- Important for pipeline
+        UpdatedAt = GETDATE()
+
+    WHERE DoctorId = @DoctorId
+      AND IsDeleted = 0;
+
+END;
+
+CREATE OR ALTER PROCEDURE DeleteDoctor
+    @DoctorId INT
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+
+    -- Prevent deletion if active patients exist
+    IF EXISTS
+    (
+        SELECT 1
+        FROM Patient
+        WHERE DoctorId = @DoctorId
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR(
+            'Doctor has assigned active patients. Cannot delete.',
+            16,
+            1
+        );
+
+        RETURN;
+    END;
+
+
+    UPDATE Doctor
+
+    SET
+        IsDeleted = 1,
+        UpdatedAt = GETDATE()
+
+    WHERE DoctorId = @DoctorId
+      AND IsDeleted = 0;
+
+END;
+
+
+------TESTING -----
+SELECT *
+FROM Doctor;
+
+EXEC GetAllDoctors;
+EXEC GetDoctorById 1;
+EXEC GetPatientsByDoctor 1;
+EXEC AddDoctor
+    'Raj',
+    'Sharmaji',
+    'Physiologist',
+    '1452634672',
+    'rajji@gmail.com';
+
+EXEC UpdateDoctor
+    1,
+    'Amit',
+    'Sharma',
+    'Senior Cardiologist',
+    '9876543210',
+    'amit.sharma@hospital.com';

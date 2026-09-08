@@ -1,0 +1,417 @@
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_MedicalHistory_Patient'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT FK_MedicalHistory_Patient
+    FOREIGN KEY (PatientId)
+    REFERENCES Patient(PatientId);
+END;
+GO
+
+SELECT dc.name
+FROM sys.default_constraints dc
+JOIN sys.columns c
+    ON dc.parent_object_id = c.object_id
+    AND dc.parent_column_id = c.column_id
+WHERE OBJECT_NAME(dc.parent_object_id) = 'MedicalHistory'
+AND c.name = 'RecordedAt';
+
+ALTER TABLE MedicalHistory
+ADD CONSTRAINT DF_MedicalHistory_RecordedAt
+DEFAULT GETDATE() FOR RecordedAt;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.default_constraints dc
+    JOIN sys.columns c
+        ON dc.parent_object_id = c.object_id
+        AND dc.parent_column_id = c.column_id
+    WHERE OBJECT_NAME(dc.parent_object_id) = 'MedicalHistory'
+    AND c.name = 'UpdatedAt'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT DF_MedicalHistory_UpdatedAt
+    DEFAULT GETDATE() FOR UpdatedAt;
+END;
+GO
+
+CREATE OR ALTER TRIGGER TRG_MedicalHistory_UpdatedAt
+ON MedicalHistory
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE mh
+    SET UpdatedAt = GETDATE()
+    FROM MedicalHistory mh
+    INNER JOIN inserted i
+        ON mh.HistoryId = i.HistoryId;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_SugarLevel'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_SugarLevel
+    CHECK (SugarLevel BETWEEN 40 AND 600);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_BP_Sys'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_BP_Sys
+    CHECK (BloodPressureSys BETWEEN 50 AND 300);
+END;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_BP_Dia'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_BP_Dia
+    CHECK (BloodPressureDia BETWEEN 30 AND 200);
+END;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_BP_Relationship'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_BP_Relationship
+    CHECK (BloodPressureDia <= BloodPressureSys);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_HeartRate'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_HeartRate
+    CHECK (HeartRate BETWEEN 40 AND 220);
+END;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_Cholesterol'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_Cholesterol
+    CHECK (Cholesterol BETWEEN 50 AND 500);
+END;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_MedicalHistory_BMI'
+)
+BEGIN
+    ALTER TABLE MedicalHistory
+    ADD CONSTRAINT CHK_MedicalHistory_BMI
+    CHECK (BMI BETWEEN 10 AND 80);
+END;
+GO
+
+CREATE OR ALTER PROCEDURE getMedicalHistory
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        HistoryId,
+        PatientId,
+        SugarLevel,
+        HasDiabetes,
+        BloodPressureSys,
+        BloodPressureDia,
+        HeartRate,
+        Cholesterol,
+        BMI,
+        Smoking,
+        AlcoholConsumption,
+        RecordedAt
+    FROM MedicalHistory
+    ORDER BY RecordedAt DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE getMedicalHistoryByPatientId
+    @PatientId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        HistoryId,
+        PatientId,
+        SugarLevel,
+        HasDiabetes,
+        BloodPressureSys,
+        BloodPressureDia,
+        HeartRate,
+        Cholesterol,
+        BMI,
+        Smoking,
+        AlcoholConsumption,
+        RecordedAt
+    FROM MedicalHistory
+    WHERE PatientId = @PatientId
+    ORDER BY RecordedAt DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE addMedicalHistories
+    @PatientId INT,
+    @SugarLevel FLOAT,
+    @HasDiabetes BIT,
+    @BloodPressureSys INT,
+    @BloodPressureDia INT,
+    @HeartRate INT,
+    @Cholesterol INT,
+    @BMI FLOAT,
+    @Smoking BIT,
+    @AlcoholConsumption BIT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Verify patient exists
+    IF NOT EXISTS (
+        SELECT 1
+        FROM Patient
+        WHERE PatientId = @PatientId
+        AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Patient does not exist or is deleted', 16, 1);
+        RETURN;
+    END;
+
+    -- Business validation
+    IF @BloodPressureDia > @BloodPressureSys
+    BEGIN
+        RAISERROR('Diastolic BP cannot exceed Systolic BP', 16, 1);
+        RETURN;
+    END;
+
+    INSERT INTO MedicalHistory
+    (
+        PatientId,
+        SugarLevel,
+        HasDiabetes,
+        BloodPressureSys,
+        BloodPressureDia,
+        HeartRate,
+        Cholesterol,
+        BMI,
+        Smoking,
+        AlcoholConsumption
+    )
+    VALUES
+    (
+        @PatientId,
+        @SugarLevel,
+        @HasDiabetes,
+        @BloodPressureSys,
+        @BloodPressureDia,
+        @HeartRate,
+        @Cholesterol,
+        @BMI,
+        @Smoking,
+        @AlcoholConsumption
+    );
+END;
+GO
+
+CREATE OR ALTER PROCEDURE calculatePatientRisk
+    @PatientId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Age INT;
+    DECLARE @Sugar FLOAT;
+    DECLARE @HasDiabetes BIT;
+
+    DECLARE @BloodPressureSys INT;
+    DECLARE @BloodPressureDia INT;
+
+    DECLARE @HeartRate INT;
+    DECLARE @Cholesterol INT;
+    DECLARE @BMI FLOAT;
+
+    DECLARE @Smoking BIT;
+    DECLARE @AlcoholConsumption BIT;
+
+    DECLARE @RiskScore INT = 0;
+
+
+    -------------------------------------------------
+    -- Check Patient Exists
+    -------------------------------------------------
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM Patient
+        WHERE PatientId = @PatientId
+        AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Patient not found', 16, 1);
+        RETURN;
+    END;
+
+
+    -------------------------------------------------
+    -- Calculate Age
+    -------------------------------------------------
+
+    SELECT
+        @Age =
+            DATEDIFF(YEAR, DateOfBirth, GETDATE())
+            -
+            CASE
+                WHEN DATEADD(
+                    YEAR,
+                    DATEDIFF(YEAR, DateOfBirth, GETDATE()),
+                    DateOfBirth
+                ) > GETDATE()
+                THEN 1
+                ELSE 0
+            END
+    FROM Patient
+    WHERE PatientId = @PatientId;
+
+
+    -------------------------------------------------
+    -- Get Latest Medical History
+    -------------------------------------------------
+
+    SELECT TOP 1
+        @Sugar = SugarLevel,
+        @HasDiabetes = HasDiabetes,
+        @BloodPressureSys = BloodPressureSys,
+        @BloodPressureDia = BloodPressureDia,
+        @HeartRate = HeartRate,
+        @Cholesterol = Cholesterol,
+        @BMI = BMI,
+        @Smoking = Smoking,
+        @AlcoholConsumption = AlcoholConsumption
+    FROM MedicalHistory
+    WHERE PatientId = @PatientId
+    ORDER BY RecordedAt DESC;
+
+
+    -------------------------------------------------
+    -- Check Medical History Exists
+    -------------------------------------------------
+
+    IF @Sugar IS NULL
+    BEGIN
+        RAISERROR('No medical history found for this patient', 16, 1);
+        RETURN;
+    END;
+
+
+    -------------------------------------------------
+    -- RISK CALCULATION
+    -------------------------------------------------
+
+
+    -- Age
+    IF @Age > 60
+        SET @RiskScore += 2;
+
+
+    -- Sugar
+    IF @Sugar > 140
+        SET @RiskScore += 2;
+
+
+    -- Diabetes
+    IF @HasDiabetes = 1
+        SET @RiskScore += 2;
+
+
+    -- Blood Pressure
+    IF @BloodPressureSys > 140
+        OR @BloodPressureDia > 90
+        SET @RiskScore += 2;
+
+
+    -- Heart Rate
+    IF @HeartRate > 100
+        SET @RiskScore += 1;
+
+
+    -- Cholesterol
+    IF @Cholesterol > 240
+        SET @RiskScore += 2;
+
+
+    -- BMI
+    IF @BMI > 30
+        SET @RiskScore += 1;
+
+
+    -- Smoking
+    IF @Smoking = 1
+        SET @RiskScore += 2;
+
+
+    -- Alcohol Consumption
+    IF @AlcoholConsumption = 1
+        SET @RiskScore += 1;
+
+
+    -------------------------------------------------
+    -- Maximum Risk Score = 10
+    -------------------------------------------------
+
+    IF @RiskScore > 10
+        SET @RiskScore = 10;
+
+
+    -------------------------------------------------
+    -- Return Result
+    -------------------------------------------------
+
+    SELECT
+        @RiskScore AS RiskRating;
+
+END;
+GO
+
+----- TESTING -----
+select * from MedicalHistory;
+EXEC getMedicalHistory;
+EXEC getMedicalHistoryByPatientId 1;
+EXEC addMedicalHistories
+    @PatientId = 1,
+    @SugarLevel = 110,
+    @HasDiabetes = 1,
+    @BloodPressureSys = 120,
+    @BloodPressureDia = 80,
+    @HeartRate = 72,
+    @Cholesterol = 180,
+    @BMI = 23.5,
+    @Smoking = 1,
+    @AlcoholConsumption = 0;
+
+EXEC calculatePatientRisk @PatientId = 1;

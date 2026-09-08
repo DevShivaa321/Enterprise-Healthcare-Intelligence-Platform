@@ -1,0 +1,869 @@
+<p-toast />
+
+<p-confirmDialog />
+
+<div style="padding: 2rem">
+   
+  <!-- Header Toolbar -->
+
+   
+  <p-toolbar styleClass="mb-4">
+       
+    <ng-template #start>
+           
+      <h2 style="margin: 0; color: #1e3a5f">
+                <i class="pi pi-users" style="margin-right: 8px"></i>
+
+                Patient Management      
+      </h2>
+
+         
+    </ng-template>
+
+       
+    <ng-template #end>
+           
+      <div style="display: flex; align-items: center; width: 100%">
+               
+        <!-- LEFT SIDE -- SEARCH + CLEAR BARR -->
+
+               
+        <div style="display: flex; align-items: center; gap: 0.5rem">
+                 
+          <!-- Search Input -->
+
+                 
+          <input           pInputText           [(ngModel)]="searchTerm"           placeholder="Search by name or ID..."
+                      style="width: 220px"           (keyup.enter)="onSearch()"         />
+
+                 
+          <!-- Search Button -->
+
+                 
+          <p-button           icon="pi pi-search"           severity="info"           pTooltip="Search Patient"        
+              (onClick)="onSearch()"         />
+
+                 
+          <!-- Clear Button -->
+
+                 
+          <p-button           icon="pi pi-times"           severity="secondary"           pTooltip="Clear Search"      
+                (onClick)="clearSearch()"         />
+
+                 
+          <!-- SPACING PUSH -->
+
+                 
+          <div style="flex: 1"></div>
+
+                 
+          <!-- RIGHT GROUP (shifted slightly left instead of extreme right) -->
+
+                 
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-right: 2rem">
+                   
+            <!-- Divider -->
+
+                    <span style="border-left: 1px solid #ccc; height: 24px; margin: 0 4px"></span>
+
+                   
+          </div>
+
+                 
+          <p-button           label="Sort by Risk"           icon="pi pi-sort-alt"           severity="warn"          
+            (onClick)="sortByRisk()"         />
+
+                 
+          <!-- Add Patient Button -->
+
+                 
+          <p-button           *ngIf="userRole !== 'DOCTOR'"           label="Add Patient"           icon="pi pi-plus"  
+                    severity="success"           (onClick)="openAddDialog()"         />
+
+                 
+          <!-- Doctor Dashboard Button -->
+
+                   <p-button             label="Doctor Dashboard"             icon="pi pi-user-edit"            
+            severity="help"             (onClick)="goToDoctors()" />
+
+                     <!-- Logout Button -->
+
+                 
+          <p-button label="Logout" icon="pi pi-sign-out" severity="danger" (onClick)="logout()" />
+
+                 
+        </div>
+
+             
+      </div>
+
+         
+    </ng-template>
+
+     
+  </p-toolbar>
+
+   
+  <!-- Patient Table -->
+
+   
+  <p-table     [value]="patients"     [loading]="loading"     [paginator]="true"     [rows]="rows"
+    [totalRecords]="totalRecords" [lazy]="true" (onLazyLoad)="onPageChange($event)"    
+    [rowsPerPageOptions]="[5, 8, 15]"     styleClass="p-datatable-striped p-datatable-gridlines"     dataKey="patientId"
+     >
+       
+    <ng-template #header>
+           
+      <tr>
+               
+        <th pSortableColumn="patientId"># ID <p-sortIcon field="patientId" /></th>
+
+               
+        <th pSortableColumn="firstName">Name <p-sortIcon field="firstName" /></th>
+
+               
+        <th pSortableColumn="dateOfBirth">Date of Birth <p-sortIcon field="dateOfBirth" /></th>
+
+               
+        <th pSortableColumn="gender">Gender <p-sortIcon field="gender" /></th>
+
+               
+        <th pSortableColumn="doctorName">Assigned Doctor <p-sortIcon field="doctorName" /></th>
+
+               
+        <th>Risk Rating</th>
+
+               
+        <th>Actions</th>
+             
+      </tr>
+
+         
+    </ng-template>
+
+       
+    <ng-template #body let-patient>
+           
+      <tr>
+               
+        <td>
+          {{ patient.patientId }}
+        </td>
+
+        <td>
+                  <strong>{{ patient.firstName }} {{ patient.lastName }}</strong>        
+        </td>
+
+               
+        <td>{{ patient.dateOfBirth }}</td>
+
+               
+        <td>
+                   
+          <p-tag             [value]="patient.gender"             [severity]="
+              patient.gender === 'male'
+                ? 'info'
+                : patient.gender === 'female'
+                  ? 'warn'
+                  : 'secondary'
+            " />
+                 
+        </td>
+
+               
+        <td>
+                    <strong>{{ patient.doctorName || '-' }}</strong>        
+        </td>
+
+               
+        <td>
+          <!-- {{patient.riskRating}} -->
+                   
+          <span *ngIf="patient.riskRating > 0; else noRisk">
+                         
+            <p-tag                 [value]="patient.riskRating + '/10'"                 [severity]="
+                patient.riskRating >= 7 ? 'danger' : patient.riskRating >= 4 ? 'warn' : 'success'
+              " />
+
+                     
+          </span>
+
+                   
+          <ng-template #noRisk>
+                        <span style="color: #aaa; font-size: 12px">—</span>
+
+                     
+          </ng-template>
+
+                 
+        </td>
+
+               
+        <td>
+                   
+          <p-button             icon="pi pi-pencil"             severity="info"             [rounded]="true"            
+            [text]="true"             (onClick)="openEditDialog(patient)"             pTooltip="Edit Patient"        
+              />
+
+                   
+          <p-button             *ngIf="userRole === 'ADMIN'"             icon="pi pi-trash"            
+            severity="danger"             [rounded]="true"             [text]="true"            
+            (onClick)="confirmDelete(patient)"             pTooltip="Delete Patient"           />
+
+                   
+          <p-button             *ngIf="userRole !== 'RECEPTIONIST'"             icon="pi pi-asterisk"            
+            severity="warn"             [rounded]="true"             [text]="true"            
+            (onClick)="openHistoryDialog(patient)"             pTooltip="Medical History"           />
+
+                 
+        </td>
+
+             
+      </tr>
+
+         
+    </ng-template>
+
+       
+    <ng-template #emptymessage>
+           
+      <tr>
+               
+        <td colspan="5" style="text-align: center; padding: 2rem; color: #888">
+                   
+          <i class="pi pi-inbox" style="font-size: 2rem; display: block; margin-bottom: 8px"></i>
+
+                    No patients found. Click "Add Patient" to begin.        
+        </td>
+
+             
+      </tr>
+
+         
+    </ng-template>
+
+     
+  </p-table>
+</div>
+
+<!-- Add / Edit Dialog -->
+
+<p-dialog   [(visible)]="displayDialog"   [header]="isEditMode ? 'Edit Patient' : 'Add New Patient'"   [modal]="true"  
+  [style]="{ width: '500px' }"   [draggable]="false"   [resizable]="false">
+   
+  <div *ngIf="selectedPatient">
+     
+    <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0">
+         
+      <!-- First Name -->
+
+         
+      <div>
+             
+        <label style="display: block; margin-bottom: 4px; font-weight: 600">First Name <span
+            style="color: red">*</span></label>
+
+             
+        <input         pInputText         [(ngModel)]="selectedPatient.firstName"         placeholder="Enter first name"
+                  style="width: 100%"       />
+
+             
+        <small *ngIf="submitAttempted && !selectedPatient.firstName" style="color: #e74c3c">First name is
+          required</small>
+
+             
+        <small *ngIf="
+            submitAttempted &&
+            selectedPatient.firstName &&
+            !/^[A-Za-z\s'-]+$/.test(selectedPatient.firstName.trim())
+          " style="color: #e74c3c">First name must only contain letters</small>
+
+             
+        <small *ngIf="
+            submitAttempted &&
+            selectedPatient.firstName?.trim() &&
+            selectedPatient.firstName.trim().length < 2
+          " style="color: #e74c3c">First name must be at least 2 characters</small>
+
+           
+      </div>
+
+         
+      <!-- Last Name -->
+
+         
+      <div>
+              <label style="display: block; margin-bottom: 4px; font-weight: 600">Last Name</label>
+
+             
+        <input         pInputText         [(ngModel)]="selectedPatient.lastName"        
+          placeholder="Enter last name (optional)"         style="width: 100%"       />
+
+           
+      </div>
+
+         
+      <!-- DOB + Gender -->
+
+         
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem">
+             
+        <!-- DOB -->
+
+             
+        <div>
+                 
+          <label style="display: block; margin-bottom: 4px; font-weight: 600">Date of Birth<span
+              style="color: red">*</span></label>
+
+                 
+          <input           pInputText           type="date"           [(ngModel)]="selectedPatient.dateOfBirth"        
+              [max]="today"           required           style="width: 100%"         />
+
+               
+        </div>
+
+             
+        <!-- Gender -->
+
+             
+        <div>
+                 
+          <label style="display: block; margin-bottom: 4px; font-weight: 600">Gender<span
+              style="color: red">*</span></label>
+
+                 
+          <p-select           [options]="genderOptions"           [(ngModel)]="selectedPatient.gender"          
+            placeholder="Select Gender"           appendTo="body"           style="width: 100%"        ></p-select>
+
+               
+        </div>
+
+           
+      </div>
+
+         
+      <!------------------------------------------ Doctor Dropdown -------------------------------->
+      <div>
+
+        <label style="
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 600;
+    ">
+          Assigned Doctor<span style="color: red">*</span>
+        </label>
+
+        <p-select [(ngModel)]="selectedDoctor" [options]="doctorSearchResults" optionLabel="doctorName"
+          placeholder="Type at least 2 characters to search doctor" [filter]="true" (onFilter)="searchDoctors($event)"
+          (onChange)="onDoctorSelect($event.value)" [showClear]="true" appendTo="body" style="width: 100%">
+
+          <!-- SEARCH RESULTS -->
+          <ng-template pTemplate="item" let-doctor>
+
+            <div style="
+          display: flex;
+          flex-direction: column;
+          padding: 5px 0;
+        ">
+
+              <!-- Doctor Name -->
+              <div style="font-weight: 600; font-size: 14px">
+
+                {{ doctor.doctorName }}
+
+              </div>
+
+              <!-- Specialization + ID -->
+              <div style="
+            font-size: 12px;
+            opacity: 0.75;
+            margin-top: 2px;
+          ">
+
+                {{ doctor.specialization }}
+                &nbsp; | &nbsp;
+                Doctor ID: {{ doctor.doctorId }}
+
+              </div>
+
+            </div>
+
+          </ng-template>
+
+
+          <!----------------------- SELECTED DOCTOR DISPLAY ------------------------------->
+          <ng-template pTemplate="selectedItem" let-doctor>
+
+            <div *ngIf="doctor">
+
+              <span style="font-weight: 600">
+                {{ doctor.doctorName }}
+              </span>
+
+              <span style="font-size: 12px; opacity: 0.75; margin-left: 6px">
+                — {{ doctor.specialization }} | ID: {{ doctor.doctorId }}
+              </span>
+
+            </div>
+
+          </ng-template>
+
+        </p-select>
+
+
+        <!-- Validation -->
+        <small *ngIf="submitAttempted && !selectedDoctor" style="color: #e74c3c">
+          Doctor selection is required
+        </small>
+
+      </div>
+       
+    </div>
+  </div>
+
+   
+  <ng-template #footer>
+       
+    <p-button       label="Cancel"       icon="pi pi-times"       severity="secondary"      
+      (onClick)="displayDialog = false"     />
+
+       
+    <p-button       [label]="isEditMode ? 'Update Patient' : 'Save Patient'"       icon="pi pi-check"      
+      severity="success"       (onClick)="savePatient()"     />
+
+     
+  </ng-template>
+</p-dialog>
+
+<!-- Medical History Dialog -->
+
+<p-dialog   [(visible)]="displayHistoryDialog"   [header]="
+    'Medical History — ' +
+    (selectedPatient?.firstName || '') +
+    ' ' +
+    (selectedPatient?.lastName || '')
+  "   [modal]="true"   [style]="{ width: '680px' }"   [draggable]="false"   [resizable]="false">
+   
+  <!-- Patient Summary Bar -->
+
+   
+  <div style="
+      display: flex;
+      gap: 1.5rem;
+      padding: 0.75rem 0 1rem;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 1rem;
+    ">
+       
+    <div>
+           
+      <div style="font-size: 11px; color: #888">Patient ID</div>
+
+           
+      <div style="font-weight: 600">{{ selectedPatient?.patientId }}</div>
+
+         
+    </div>
+
+       
+    <div>
+           
+      <div style="font-size: 11px; color: #888">Date of Birth</div>
+
+           
+      <div style="font-weight: 600">{{ selectedPatient?.dateOfBirth }}</div>
+
+         
+    </div>
+
+       
+    <div>
+           
+      <div style="font-size: 11px; color: #888">Gender</div>
+
+           
+      <div style="font-weight: 600; text-transform: capitalize">{{ selectedPatient?.gender }}</div>
+
+         
+    </div>
+
+       
+    <div>
+           
+      <div style="font-size: 11px; color: #888">Assigned Doctor</div>
+
+           
+      <div style="font-weight: 600">{{ selectedPatient?.doctorName }}</div>
+
+         
+    </div>
+
+       
+    <div *ngIf="riskResult" style="margin-left: auto">
+           
+      <div style="font-size: 11px; color: #888">Last Risk Score</div>
+
+           
+      <p-tag         [value]="riskResult.riskRating + '/10'"         [severity]="
+          riskResult.riskRating >= 7 ? 'danger' : riskResult.riskRating >= 4 ? 'warn' : 'success'
+        ">
+             
+      </p-tag>
+    </div>
+
+     
+  </div>
+
+   
+  <!-- Add Record Form -->
+
+   
+  <div     style="
+      display: grid;
+      grid-template-columns: 1fr 1fr auto auto;
+      gap: 0.75rem;
+      align-items: flex-end;
+      margin-bottom: 1.25rem;
+    ">
+       
+    <div>
+           
+      <label style="display: block; margin-bottom: 4px; font-weight: 600">Sugar Level (mg/dL)</label>
+
+           
+      <input         pInputText         type="number"         [(ngModel)]="medicalHistory.sugarLevel"        
+        placeholder="e.g. 40-600"         style="width: 100%"         [class.ng-invalid]="
+          medicalHistory.sugarLevel &&
+          (medicalHistory.sugarLevel < 40 || medicalHistory.sugarLevel > 600)
+        "         [class.ng-dirty]="medicalHistory.sugarLevel" />
+
+           
+      <small *ngIf="
+          medicalHistory.sugarLevel &&
+          (medicalHistory.sugarLevel < 40 || medicalHistory.sugarLevel > 600)
+        " style="color: #e74c3c">Sugar level must be between 40 and 600</small>
+
+         
+    </div>
+
+       
+    <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 4px">
+           
+      <p-checkbox         [(ngModel)]="medicalHistory.hasDiabetes"         [binary]="true"        
+        inputId="diabetesCheck"       />
+
+           
+      <label for="diabetesCheck" style="font-weight: 600; cursor: pointer">Has Diabetes</label>
+
+         
+    </div>
+
+       
+    <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600">BP Systolic</label>
+
+           
+      <input         pInputText         type="number"         [(ngModel)]="medicalHistory.bloodPressureSys"        
+        placeholder="e.g. 50-300"         style="width: 100%"         [class.ng-invalid]="
+          medicalHistory.bloodPressureSys &&
+          (medicalHistory.bloodPressureSys < 50 || medicalHistory.bloodPressureSys > 300)
+        "         [class.ng-dirty]="medicalHistory.bloodPressureSys"       />
+
+           
+      <small *ngIf="
+          medicalHistory.bloodPressureSys &&
+          (medicalHistory.bloodPressureSys < 50 || medicalHistory.bloodPressureSys > 300)
+        " style="color: #e74c3c">Systolic BP must be between 50 and 300</small>
+
+         
+    </div>
+
+       
+    <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600">BP Diastolic</label>
+
+           
+      <input         pInputText         type="number"         [(ngModel)]="medicalHistory.bloodPressureDia"        
+        placeholder="e.g. 30-200"         style="width: 100%"         [class.ng-invalid]="
+          medicalHistory.bloodPressureDia &&
+          (medicalHistory.bloodPressureDia < 30 ||
+            medicalHistory.bloodPressureDia > 200 ||
+            medicalHistory.bloodPressureDia >= medicalHistory.bloodPressureSys)
+        "         [class.ng-dirty]="medicalHistory.bloodPressureDia"       />
+
+           
+      <small *ngIf="
+          medicalHistory.bloodPressureDia &&
+          (medicalHistory.bloodPressureDia < 30 || medicalHistory.bloodPressureDia > 200)
+        "               style="color: #e74c3c">
+                      Diastolic BP must be between 30 and 200      
+      </small>
+
+           
+      <small *ngIf="
+          medicalHistory.bloodPressureDia &&
+          medicalHistory.bloodPressureSys &&
+          medicalHistory.bloodPressureDia >= medicalHistory.bloodPressureSys
+        "               style="color: #e74c3c">
+                      Diastolic BP must be less than Systolic BP ({{
+        medicalHistory.bloodPressureSys
+        }})      
+      </small>
+
+         
+    </div>
+
+       
+    <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600">Heart Rate</label>
+
+           
+      <input         pInputText         type="number"         [(ngModel)]="medicalHistory.heartRate"        
+        placeholder="e.g. 40-220"         style="width: 100%"         [class.ng-invalid]="
+          medicalHistory.heartRate &&
+          (medicalHistory.heartRate < 40 || medicalHistory.heartRate > 220)
+        "         [class.ng-dirty]="medicalHistory.heartRate"       />
+
+           
+      <small *ngIf="
+          medicalHistory.heartRate &&
+          (medicalHistory.heartRate < 40 || medicalHistory.heartRate > 220)
+        " style="color: #e74c3c">Heart rate must be between 40 and 220</small>
+
+         
+    </div>
+
+       
+    <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600">Cholesterol</label>
+
+           
+      <input         pInputText         type="number"         [(ngModel)]="medicalHistory.cholesterol"        
+        placeholder="e.g. 50-500"         style="width: 100%"         [class.ng-invalid]="
+          medicalHistory.cholesterol &&
+          (medicalHistory.cholesterol < 50 || medicalHistory.cholesterol > 500)
+        "         [class.ng-dirty]="medicalHistory.cholesterol"       />
+
+           
+      <small *ngIf="
+          medicalHistory.cholesterol &&
+          (medicalHistory.cholesterol < 50 || medicalHistory.cholesterol > 500)
+        " style="color: #e74c3c">Cholesterol must be between 50 and 500</small>
+
+         
+    </div>
+
+       
+    <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600">BMI</label>
+
+           
+      <input         pInputText         type="number"         [(ngModel)]="medicalHistory.bmi"        
+        placeholder="e.g. 10-80"         style="width: 100%"         [class.ng-invalid]="
+          medicalHistory.bmi && (medicalHistory.bmi < 10 || medicalHistory.bmi > 80)
+        "         [class.ng-dirty]="medicalHistory.bmi"       />
+
+           
+      <small *ngIf="medicalHistory.bmi && (medicalHistory.bmi < 10 || medicalHistory.bmi > 80)"
+        style="color: #e74c3c">BMI must be between 10 and 80</small>
+
+         
+    </div>
+
+       
+    <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 4px">
+           
+      <p-checkbox         [(ngModel)]="medicalHistory.smoking"         [binary]="true"         inputId="smokingCheck"  
+           ></p-checkbox>
+
+            <label for="smokingCheck" style="font-weight: 600; cursor: pointer"> Smoking </label>
+
+         
+    </div>
+
+       
+    <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 4px">
+           
+      <p-checkbox         [(ngModel)]="medicalHistory.alcoholConsumption"         [binary]="true"        
+        inputId="alcoholCheck"      ></p-checkbox>
+
+           
+      <label for="alcoholCheck" style="font-weight: 600; cursor: pointer">
+                Alcohol Consumption      
+      </label>
+
+         
+    </div>
+
+       
+    <p-button       label="Add Record"       icon="pi pi-plus"       severity="success"       [loading]="addingHistory"
+            [disabled]="addingHistory || !!validateMedicalHistory()"       (onClick)="addHistory()"     />
+
+     
+  </div>
+
+   
+  <!-- History Table -->
+
+   
+  <p-table     [value]="patientHistories"     [loading]="loadingHistory"    
+    styleClass="p-datatable-striped p-datatable-gridlines"     [paginator]="true"     [rows]="5"  >
+       
+    <ng-template pTemplate="header">
+           
+      <tr>
+               
+        <th>Record ID</th>
+
+               
+        <th>Sugar Level</th>
+
+               
+        <th>BP</th>
+
+               
+        <th>Heart Rate</th>
+
+               
+        <th>Cholesterol</th>
+
+               
+        <th>BMI</th>
+
+               
+        <th>Smoking</th>
+
+               
+        <th>Alcohol</th>
+
+               
+        <th>Diabetic</th>
+
+             
+      </tr>
+
+         
+    </ng-template>
+
+       
+    <ng-template pTemplate="body" let-h>
+           
+      <tr>
+               
+        <td>{{ h.id }}</td>
+
+               
+        <td>{{ h.sugarLevel }} mg/dL</td>
+
+               
+        <td>{{ h.bloodPressureSys }}/{{ h.bloodPressureDia }}</td>
+
+               
+        <td>{{ h.heartRate }}</td>
+
+               
+        <td>{{ h.cholesterol }}</td>
+
+               
+        <td>{{ h.bmi }}</td>
+
+               
+        <td>
+                   
+          <p-tag             [value]="!!h.smoking ? 'Yes' : 'No'"            
+            [severity]="!!h.smoking ? 'danger' : 'success'"           />
+
+                 
+        </td>
+
+        <!-- !! converts any truthy value( String "true", number 1, boolean true) into a proper boolean -->
+
+               
+        <td>
+                   
+          <p-tag             [value]="!!h.alcoholConsumption ? 'Yes' : 'No'"            
+            [severity]="!!h.alcoholConsumption ? 'danger' : 'success'"           />
+
+                 
+        </td>
+
+               
+        <td>
+                   
+          <p-tag             [value]="!!h.hasDiabetes ? 'Yes' : 'No'"            
+            [severity]="!!h.hasDiabetes ? 'danger' : 'success'"           />
+
+                 
+        </td>
+
+             
+      </tr>
+
+         
+    </ng-template>
+
+       
+    <ng-template #emptymessage>
+           
+      <tr>
+               
+        <td colspan="9" style="text-align: center; padding: 1.5rem; color: #888">
+                   
+          <i class="pi pi-inbox" style="font-size: 1.5rem; display: block; margin-bottom: 6px"></i>
+
+                    No history records found for this patient.        
+        </td>
+
+             
+      </tr>
+
+         
+    </ng-template>
+
+     
+  </p-table>
+
+   
+  <ng-template #footer>
+       
+    <p-button       label="Close"       icon="pi pi-times"       severity="secondary"      
+      (onClick)="displayHistoryDialog = false"     />
+
+     
+  </ng-template>
+
+   
+  <!-- Risk Section -->
+
+   
+  <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid #e0e0e0">
+       
+    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap">
+           
+      <p-button         label="Calculate Risk"         icon="pi pi-chart-bar"         severity="warn"        
+        [loading]="calculatingRisk"         (onClick)="calculateRisk()"       />
+
+           
+      <div *ngIf="riskResult" style="display: flex; align-items: center; gap: 0.75rem">
+               
+        <span style="font-size: 14px; color: #555">
+                    Risk Rating: <strong>{{ riskResult.riskRating }}/10</strong>       
+        </span>
+
+               
+        <p-tag           [value]="
+            riskResult.riskRating >= 7 ? 'HIGH' : riskResult.riskRating >= 4 ? 'MEDIUM' : 'LOW'
+          "           [severity]="
+            riskResult.riskRating >= 7 ? 'danger' : riskResult.riskRating >= 4 ? 'warn' : 'success'
+          " style="font-size: 14px"         />
+
+             
+      </div>
+
+         
+    </div>
+
+     
+  </div>
+</p-dialog>

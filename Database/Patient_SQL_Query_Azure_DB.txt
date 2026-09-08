@@ -1,0 +1,386 @@
+----> CHECK FOR ORPHANED DOCTORIds <-------
+SELECT DISTINCT p.DoctorId
+FROM Patient p
+LEFT JOIN Doctor d
+    ON p.DoctorId = d.DoctorId
+WHERE d.DoctorId IS NULL;
+
+UPDATE Patient
+SET LastName = NULL
+WHERE LTRIM(RTRIM(LastName)) = '';
+UPDATE Patient
+SET IsDeleted = 0
+WHERE IsDeleted IS NULL;
+UPDATE Patient
+SET UpdatedAt = CreatedAt
+WHERE UpdatedAt IS NULL;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_PATIENT_FIRSTNAME_VALID'
+)
+BEGIN
+    ALTER TABLE Patient
+    ADD CONSTRAINT CHK_PATIENT_FIRSTNAME_VALID
+    CHECK (
+        LEN(LTRIM(RTRIM(FirstName))) >= 2
+        AND FirstName NOT LIKE '%[^A-Za-z ''-]%'
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_PATIENT_LASTNAME_VALID'
+)
+BEGIN
+    ALTER TABLE Patient
+    ADD CONSTRAINT CHK_PATIENT_LASTNAME_VALID
+    CHECK (
+        LastName IS NULL
+        OR
+        (
+            LEN(LTRIM(RTRIM(LastName))) > 0
+            AND LastName NOT LIKE '%[^A-Za-z ''-]%'
+        )
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_DOB_MIN_DATE'
+)
+BEGIN
+    ALTER TABLE Patient
+    ADD CONSTRAINT CHK_DOB_MIN_DATE
+    CHECK (
+        DateOfBirth >= '1900-01-01'
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CHK_Gender'
+)
+BEGIN
+    ALTER TABLE Patient
+    ADD CONSTRAINT CHK_Gender
+    CHECK (
+        Gender IN ('male', 'female', 'other')
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_Patient_Doctor'
+)
+BEGIN
+    ALTER TABLE Patient
+    ADD CONSTRAINT FK_Patient_Doctor
+    FOREIGN KEY (DoctorId)
+    REFERENCES Doctor(DoctorId);
+END;
+
+ALTER TABLE Patient
+ADD CONSTRAINT DF_Patient_UpdatedAt
+DEFAULT GETDATE() FOR UpdatedAt;
+ALTER TABLE Patient
+ADD CONSTRAINT DF_Patient_CreatedAt
+DEFAULT GETDATE() FOR CreatedAt;
+
+
+--- SPs ------
+CREATE OR ALTER PROCEDURE AddPatient
+(
+    @FirstName VARCHAR(50),
+    @LastName VARCHAR(50) = NULL,
+    @DateOfBirth DATE,
+    @Gender VARCHAR(10),
+    @DoctorId INT
+)
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    -- Clean LastName
+    SET @LastName =
+        NULLIF(LTRIM(RTRIM(@LastName)), '');
+
+    -- Normalize Gender
+    SET @Gender =
+        LOWER(LTRIM(RTRIM(@Gender)));
+
+
+    -- Validate DOB
+    IF @DateOfBirth > CAST(GETDATE() AS DATE)
+    BEGIN
+        RAISERROR('Date of Birth cannot be in the future', 16, 1);
+        RETURN;
+    END;
+
+
+    -- Validate Doctor
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM Doctor
+        WHERE DoctorId = @DoctorId
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Doctor does not exist or is deleted', 16, 1);
+        RETURN;
+    END;
+
+
+    INSERT INTO Patient
+    (
+        FirstName,
+        LastName,
+        DateOfBirth,
+        Gender,
+        DoctorId,
+        CreatedAt,
+        UpdatedAt,
+        IsDeleted
+    )
+    VALUES
+    (
+        @FirstName,
+        @LastName,
+        @DateOfBirth,
+        @Gender,
+        @DoctorId,
+        GETDATE(),
+        GETDATE(),
+        0
+    );
+
+END;
+
+CREATE OR ALTER PROCEDURE GetAllPatient
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SELECT
+        p.PatientId,
+        p.FirstName,
+        p.LastName,
+        p.DateOfBirth,
+        p.Gender,
+        p.DoctorId,
+
+        CONCAT(
+            d.FirstName,
+            ' ',
+            ISNULL(d.LastName, '')
+        ) AS DoctorName
+
+    FROM Patient p
+
+    LEFT JOIN Doctor d
+        ON p.DoctorId = d.DoctorId
+        AND d.IsDeleted = 0
+
+    WHERE p.IsDeleted = 0
+
+    ORDER BY p.PatientId;
+
+END;
+
+CREATE OR ALTER PROCEDURE GetPatientById
+    @Id INT
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SELECT
+        p.PatientId,
+        p.FirstName,
+        p.LastName,
+        p.DateOfBirth,
+        p.Gender,
+        p.DoctorId,
+
+        CONCAT(
+            d.FirstName,
+            ' ',
+            ISNULL(d.LastName, '')
+        ) AS DoctorName
+
+    FROM Patient p
+
+    LEFT JOIN Doctor d
+        ON p.DoctorId = d.DoctorId
+        AND d.IsDeleted = 0
+
+    WHERE p.PatientId = @Id
+      AND p.IsDeleted = 0;
+
+END;
+
+CREATE OR ALTER PROCEDURE UpdatePatient
+(
+    @Id INT,
+    @FirstName VARCHAR(50),
+    @LastName VARCHAR(50),
+    @DateOfBirth DATE,
+    @Gender VARCHAR(10),
+    @DoctorId INT
+)
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+
+    -- Clean LastName
+    SET @LastName =
+        NULLIF(LTRIM(RTRIM(@LastName)), '');
+
+
+    -- Normalize Gender
+    SET @Gender =
+        LOWER(LTRIM(RTRIM(@Gender)));
+
+
+    -- Check Patient
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM Patient
+        WHERE PatientId = @Id
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Patient not found', 16, 1);
+        RETURN;
+    END;
+
+
+    -- Validate DOB
+    IF @DateOfBirth > CAST(GETDATE() AS DATE)
+    BEGIN
+        RAISERROR('Date of Birth cannot be in the future', 16, 1);
+        RETURN;
+    END;
+
+
+    -- Validate Doctor
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM Doctor
+        WHERE DoctorId = @DoctorId
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Doctor does not exist or is deleted', 16, 1);
+        RETURN;
+    END;
+
+
+    UPDATE Patient
+
+    SET
+        FirstName = @FirstName,
+        LastName = @LastName,
+        DateOfBirth = @DateOfBirth,
+        Gender = @Gender,
+        DoctorId = @DoctorId,
+
+        -- Important for Pipeline
+        UpdatedAt = GETDATE()
+
+    WHERE PatientId = @Id
+      AND IsDeleted = 0;
+
+END;
+
+CREATE OR ALTER PROCEDURE DeletePatient
+    @Id INT
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM Patient
+        WHERE PatientId = @Id
+          AND IsDeleted = 0
+    )
+    BEGIN
+        RAISERROR('Patient not found', 16, 1);
+        RETURN;
+    END;
+
+
+    UPDATE Patient
+
+    SET
+        IsDeleted = 1,
+
+        -- Important for Pipeline
+        UpdatedAt = GETDATE()
+
+    WHERE PatientId = @Id
+      AND IsDeleted = 0;
+
+END;
+
+--- TESTING -----
+EXEC GetAllPatient;
+EXEC GetPatientById 1;
+EXEC UpdatePatient
+    1,
+    'Shivam',
+    'Sharma',
+    '2004-06-04',
+    'male',
+    1;
+
+EXEC DeletePatient 10;
+
+SELECT *
+FROM Patient
+WHERE IsDeleted = 0;
+
+SELECT *
+FROM Patient
+ORDER BY UpdatedAt DESC;
+
+select * from Patient order by PatientId asc;
+
+-- Patient <-> Doctor Mapping
+SELECT
+    p.PatientId,
+
+    CONCAT(
+        p.FirstName,
+        ' ',
+        ISNULL(p.LastName, '')
+    ) AS PatientName,
+
+    p.DoctorId,
+
+    CONCAT(
+        d.FirstName,
+        ' ',
+        ISNULL(d.LastName, '')
+    ) AS DoctorName
+
+FROM Patient p
+
+LEFT JOIN Doctor d
+    ON p.DoctorId = d.DoctorId;
