@@ -229,3 +229,20 @@ logs/
 
 *.pbix~
 *.pbit~
+
+
+# =========================================================
+# SPRING BOOT LOCAL CONFIGURATION / SECRETS
+# =========================================================
+
+**/application-local.properties
+**/application-local.yml
+**/application-local.yaml
+
+
+# =========================================================
+# APPLICATION LOGS
+# =========================================================
+
+*.log
+*.log.*
